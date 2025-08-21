@@ -1,38 +1,72 @@
-# Java Realtime Chat (Spring Boot + STOMP/WebSocket)
+# 💬 Chat em Tempo Real em Java
 
-Um projeto minimalista de **chat em tempo real** usando Spring Boot 3, STOMP sobre WebSocket e uma página HTML simples.
+Uma aplicação minimalista de **chat em tempo real** construída com
+**Spring Boot 3**, **STOMP sobre WebSocket** e um frontend simples em
+HTML/Thymeleaf.\
+Os usuários podem entrar com um apelido e trocar mensagens
+instantaneamente em uma sala pública.
 
-## Como rodar
+------------------------------------------------------------------------
 
-1. **Pré‑requisitos**: Java 17+ e Maven 3.8+.
-2. No terminal, dentro da pasta do projeto:
-   ```bash
-   mvn spring-boot:run
-   ```
+## 🚀 Funcionalidades
 
-## Endpoints principais
-- WebSocket endpoint: `/ws` (com SockJS opcional).
-- STOMP:
-  - Enviar mensagem: `/app/chat.send` (mensagens vão para `/topic/public`).
-  - Entrar no chat: `/app/chat.addUser`.
-  - Assinatura do feed público: `/topic/public`.
+-   🔌 Comunicação em tempo real com WebSocket + STOMP (fallback
+    SockJS)\
+-   👥 Sala pública com notificações de entrada e saída\
+-   🎨 Interface responsiva com tema escuro (HTML + CSS puro)\
+-   📦 Fácil de rodar com Maven (nenhuma configuração extra necessária)
 
-## Estrutura
-```text
-src/main/java/com/example/chat
-├─ ChatApplication.java
-├─ WebSocketConfig.java
-├─ ChatMessage.java
-└─ ChatController.java
-src/main/resources
-├─ application.properties
-└─ templates/index.html
+------------------------------------------------------------------------
+
+## 📂 Estrutura do Projeto
+
+    src/main/java/com/example/chat
+    ├── ChatApplication.java     # Classe principal
+    ├── WebSocketConfig.java     # Configuração do WebSocket/STOMP
+    ├── ChatMessage.java         # DTO para mensagens
+    └── ChatController.java      # Controlador para envio/recebimento
+    src/main/resources
+    ├── application.properties   # Configurações da aplicação
+    └── templates/index.html     # Interface do chat
+
+------------------------------------------------------------------------
+
+## 🛠️ Como Executar
+
+### Pré-requisitos
+
+-   Java 17+\
+-   Maven 3.8+
+
+### Rodando localmente
+
+``` bash
+# clone o repositório
+git clone https://github.com/pedrobicas/realtime-chat.git
+cd realtime-chat
+
+# inicie a aplicação
+mvn spring-boot:run
 ```
 
-> Dica: Para publicar em produção com Nginx, faça proxy para `/ws` com suporte a WebSocket.
+Abra no navegador: **http://localhost:8080** 🚀
 
-## Próximos passos (opcional)
-- Persistir mensagens (PostgreSQL/MongoDB).
-- Autenticação com JWT (Spring Security) e salas privadas.
-- Escala horizontal com broker externo (RabbitMQ/Redis) via `enableStompBrokerRelay`.
-- UI melhor com React/Vue/Angular usando a mesma API STOMP.
+------------------------------------------------------------------------
+
+## 🔌 Endpoints WebSocket
+
+-   Endpoint STOMP: `/ws`\
+-   Assinaturas:
+    -   `/topic/public` → mensagens públicas\
+-   Destinos da aplicação:
+    -   `/app/chat.send` → enviar mensagem\
+    -   `/app/chat.addUser` → registrar novo usuário
+
+
+------------------------------------------------------------------------
+
+
+## 📝 Licença
+
+Este projeto está licenciado sob a **MIT License** -- fique à vontade
+para usar e melhorar.
