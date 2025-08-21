@@ -9,7 +9,6 @@ Um projeto minimalista de **chat em tempo real** usando Spring Boot 3, STOMP sob
    ```bash
    mvn spring-boot:run
    ```
-3. Abra o navegador em http://localhost:8080 e converse em tempo real.
 
 ## Endpoints principais
 - WebSocket endpoint: `/ws` (com SockJS opcional).
