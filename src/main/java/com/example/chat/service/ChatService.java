@@ -1,5 +1,5 @@
 // ChatService.java
-package com.example.chat;
+package com.example.chat.service;
 
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
@@ -15,6 +15,10 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import com.example.chat.model.ChatMessage;
+import com.example.chat.model.PrivateConversationInfo;
+import com.example.chat.model.User;
+
 @Service
 public class ChatService {
 
@@ -24,6 +28,7 @@ public class ChatService {
     private static final int TYPING_TIMEOUT_SECONDS = 3;
 
     private final SimpMessagingTemplate messagingTemplate;
+    private final PrivateChatNotificationService notificationService;
     private final Map<String, User> activeUsers = new ConcurrentHashMap<>();
     private final Map<String, String> sessionToUsername = new ConcurrentHashMap<>();
     private final List<ChatMessage> messageHistory = Collections.synchronizedList(new ArrayList<>());
@@ -35,8 +40,9 @@ public class ChatService {
     private volatile int totalMessages = 0;
     private volatile LocalDateTime chatStartTime = LocalDateTime.now();
 
-    public ChatService(SimpMessagingTemplate messagingTemplate) {
+    public ChatService(SimpMessagingTemplate messagingTemplate, PrivateChatNotificationService notificationService) {
         this.messagingTemplate = messagingTemplate;
+        this.notificationService = notificationService;
         startBackgroundTasks();
     }
 
@@ -70,6 +76,9 @@ public class ChatService {
 
             // Enviar histórico de mensagens para o novo usuário
             sendMessageHistoryToUser(username);
+
+            // Notificar mudança de status
+            notificationService.notifyUserStatusChange(username, "ONLINE");
 
             return joinMessage;
 
@@ -109,6 +118,10 @@ public class ChatService {
 
             // Enviar lista de usuários atualizada
             broadcastUserListUpdate();
+
+            // Notificar mudança de status e limpar contadores
+            notificationService.notifyUserStatusChange(username, "OFFLINE");
+            notificationService.clearUserCounts(username);
 
             return leaveMessage;
 
@@ -222,9 +235,15 @@ public class ChatService {
             privateMessage.setAvatar(senderUser.getAvatar());
             privateMessage.setColor(senderUser.getColor());
 
-            // Enviar para ambos os usuários
+            // Enviar para ambos os usuários usando destinos de usuário (requer Principal resolvido)
             messagingTemplate.convertAndSendToUser(sender, "/queue/private", privateMessage);
             messagingTemplate.convertAndSendToUser(recipient, "/queue/private", privateMessage);
+
+            // Persistir no histórico para suportar listagem/recuperação
+            addToHistory(privateMessage);
+
+            // Enviar notificações
+            notificationService.notifyNewPrivateMessage(sender, recipient, privateMessage);
 
             logger.info("Mensagem privada enviada: {} -> {}", sender, recipient);
             return privateMessage;
@@ -233,6 +252,116 @@ public class ChatService {
             logger.error("Erro ao enviar mensagem privada: {}", e.getMessage());
             return ChatMessage.createErrorMessage("Erro ao enviar mensagem privada");
         }
+    }
+
+    /**
+     * Obter conversas privadas de um usuário
+     */
+    public List<PrivateConversationInfo> getUserPrivateConversations(String username) {
+        try {
+            List<PrivateConversationInfo> conversations = new ArrayList<>();
+            
+            // Buscar todas as mensagens privadas do usuário
+            for (ChatMessage message : messageHistory) {
+                if (message.getType() == ChatMessage.MessageType.PRIVATE_MESSAGE && 
+                    (message.getSender().equals(username) || message.getRecipient().equals(username))) {
+                    
+                    String otherUser = message.getSender().equals(username) ? 
+                        message.getRecipient() : message.getSender();
+                    
+                    // Verificar se já existe conversa com este usuário
+                    PrivateConversationInfo existingConversation = conversations.stream()
+                        .filter(conv -> conv.getOtherUser().equals(otherUser))
+                        .findFirst()
+                        .orElse(null);
+                    
+                    if (existingConversation == null) {
+                        // Criar nova conversa
+                        existingConversation = new PrivateConversationInfo();
+                        existingConversation.setOtherUser(otherUser);
+                        existingConversation.setLastMessage(message);
+                        existingConversation.setUnreadCount(0);
+                        conversations.add(existingConversation);
+                    } else {
+                        // Atualizar última mensagem
+                        if (message.getTimestamp().isAfter(existingConversation.getLastMessage().getTimestamp())) {
+                            existingConversation.setLastMessage(message);
+                        }
+                    }
+                }
+            }
+            
+            // Ordenar por última mensagem (mais recente primeiro)
+            conversations.sort((a, b) -> b.getLastMessage().getTimestamp().compareTo(a.getLastMessage().getTimestamp()));
+            
+            return conversations;
+            
+        } catch (Exception e) {
+            logger.error("Erro ao obter conversas privadas para {}: {}", username, e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Obter histórico de mensagens privadas entre dois usuários
+     */
+    public List<ChatMessage> getPrivateConversationHistory(String user1, String user2) {
+        try {
+            List<ChatMessage> privateMessages = messageHistory.stream()
+                .filter(message -> message.getType() == ChatMessage.MessageType.PRIVATE_MESSAGE)
+                .filter(message -> 
+                    (message.getSender().equals(user1) && message.getRecipient().equals(user2)) ||
+                    (message.getSender().equals(user2) && message.getRecipient().equals(user1))
+                )
+                .sorted(Comparator.comparing(ChatMessage::getTimestamp))
+                .collect(Collectors.toList());
+            
+            logger.info("Histórico de conversa privada obtido: {} mensagens entre {} e {}", 
+                privateMessages.size(), user1, user2);
+            
+            return privateMessages;
+            
+        } catch (Exception e) {
+            logger.error("Erro ao obter histórico de conversa privada: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Marcar mensagens privadas como lidas
+     */
+    public void markPrivateMessagesAsRead(String sender, String recipient) {
+        try {
+            // Enviar confirmação de leitura para o remetente
+            ChatMessage readReceipt = ChatMessage.createSystemMessage("Mensagem lida");
+            readReceipt.setType(ChatMessage.MessageType.INFO);
+            readReceipt.setRecipient(sender);
+            
+            messagingTemplate.convertAndSendToUser(recipient, "/queue/read-receipt", readReceipt);
+            
+            // Notificar através do serviço de notificações
+            notificationService.notifyMessagesRead(recipient, sender);
+            
+            logger.info("Mensagens marcadas como lidas: {} -> {}", recipient, sender);
+            
+        } catch (Exception e) {
+            logger.error("Erro ao marcar mensagens como lidas: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Verificar se usuário está online
+     */
+    public boolean isUserOnline(String username) {
+        return activeUsers.containsKey(username);
+    }
+
+    /**
+     * Obter status de usuário
+     */
+    public User.UserStatus getUserStatus(String username) {
+        User user = activeUsers.get(username);
+        return user != null ? user.getStatus() : User.UserStatus.OFFLINE;
     }
 
     /**
@@ -388,3 +517,7 @@ public class ChatService {
         }, 5, 5, TimeUnit.MINUTES);
     }
 }
+
+
+
+

@@ -1,5 +1,5 @@
 // ChatController.java
-package com.example.chat;
+package com.example.chat.controller;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -16,6 +16,13 @@ import org.slf4j.LoggerFactory;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.stream.Collectors;
+
+import com.example.chat.service.ChatService;
+import com.example.chat.model.ChatMessage;
+import com.example.chat.model.User;
+import com.example.chat.model.PrivateConversationInfo;
 
 @Controller
 public class ChatController {
@@ -203,6 +210,103 @@ public class ChatController {
         return chatService.getUserByUsername(username);
     }
 
+    // ===== ENDPOINTS PARA CHAT PRIVADO =====
+
+    /**
+     * Obter conversas privadas de um usuário (REST endpoint)
+     */
+    @GetMapping("/api/chat/private/conversations/{username}")
+    @ResponseBody
+    public List<PrivateConversationInfo> getUserPrivateConversations(@PathVariable String username) {
+        try {
+            return chatService.getUserPrivateConversations(username);
+        } catch (Exception e) {
+            logger.error("Erro ao obter conversas privadas para {}: {}", username, e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Obter histórico de conversa privada entre dois usuários (REST endpoint)
+     */
+    @GetMapping("/api/chat/private/conversation/{user1}/{user2}")
+    @ResponseBody
+    public List<ChatMessage> getPrivateConversationHistory(
+            @PathVariable String user1,
+            @PathVariable String user2) {
+        try {
+            return chatService.getPrivateConversationHistory(user1, user2);
+        } catch (Exception e) {
+            logger.error("Erro ao obter histórico de conversa privada: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Marcar mensagens privadas como lidas (REST endpoint)
+     */
+    @PostMapping("/api/chat/private/mark-read")
+    @ResponseBody
+    public Map<String, Object> markPrivateMessagesAsRead(
+            @RequestBody Map<String, String> request) {
+        try {
+            String sender = request.get("sender");
+            String recipient = request.get("recipient");
+            
+            if (sender != null && recipient != null) {
+                chatService.markPrivateMessagesAsRead(sender, recipient);
+                return Map.of("success", true, "message", "Mensagens marcadas como lidas");
+            } else {
+                return Map.of("success", false, "message", "Parâmetros inválidos");
+            }
+        } catch (Exception e) {
+            logger.error("Erro ao marcar mensagens como lidas: {}", e.getMessage());
+            return Map.of("success", false, "message", "Erro interno do servidor");
+        }
+    }
+
+    /**
+     * Verificar se usuário está online (REST endpoint)
+     */
+    @GetMapping("/api/chat/users/{username}/status")
+    @ResponseBody
+    public Map<String, Object> getUserStatus(@PathVariable String username) {
+        try {
+            boolean isOnline = chatService.isUserOnline(username);
+            User.UserStatus status = chatService.getUserStatus(username);
+            
+            return Map.of(
+                "username", username,
+                "isOnline", isOnline,
+                "status", status != null ? status.name() : "OFFLINE"
+            );
+        } catch (Exception e) {
+            logger.error("Erro ao obter status do usuário {}: {}", username, e.getMessage());
+            return Map.of("error", "Erro interno do servidor");
+        }
+    }
+
+    /**
+     * Buscar usuários por termo de busca (REST endpoint)
+     */
+    @GetMapping("/api/chat/users/search")
+    @ResponseBody
+    public List<User> searchUsers(@RequestParam String query) {
+        try {
+            String searchTerm = query.toLowerCase().trim();
+            if (searchTerm.isEmpty()) {
+                return chatService.getOnlineUsers();
+            }
+            
+            return chatService.getOnlineUsers().stream()
+                .filter(user -> user.getUsername().toLowerCase().contains(searchTerm))
+                .collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Erro na busca de usuários: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
     /**
      * Health check endpoint
      */
@@ -216,3 +320,7 @@ public class ChatController {
         );
     }
 }
+
+
+
+

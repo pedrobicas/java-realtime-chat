@@ -1,5 +1,5 @@
 // ChatMessage.java
-package com.example.chat;
+package com.example.chat.model;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -254,3 +254,7 @@ public class ChatMessage {
                 id, type, sender, content);
     }
 }
+
+
+
+
