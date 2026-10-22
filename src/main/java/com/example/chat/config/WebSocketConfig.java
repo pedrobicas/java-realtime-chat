@@ -2,11 +2,13 @@
 package com.example.chat.config;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
@@ -33,6 +35,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private static final Logger logger = LoggerFactory.getLogger(WebSocketConfig.class);
 
+    @Value("${chat.allowed-origins}")
+    private String allowedOrigins;
+
     @Lazy
     @Autowired
     private ChatService chatService;
@@ -44,6 +49,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         scheduler.setThreadNamePrefix("websocket-heartbeat-");
         scheduler.initialize();
         return scheduler;
+    }
+
+    @Override
+    public void configureClientInboundChannel(ChannelRegistration registration) {
+        registration.interceptors(new ClientDestinationGuard());
     }
 
     @Override
@@ -64,7 +74,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         // Register WebSocket endpoint
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*")
+                .setAllowedOriginPatterns(allowedOrigins.split(","))
                 .addInterceptors(userHandshakeInterceptor())
                 .setHandshakeHandler(new WebSocketUserHandshakeHandler())
                 .withSockJS()
@@ -76,7 +86,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
         // Register endpoint without SockJS for modern browsers
         registry.addEndpoint("/ws-native")
-                .setAllowedOriginPatterns("*")
+                .setAllowedOriginPatterns(allowedOrigins.split(","))
                 .addInterceptors(userHandshakeInterceptor())
                 .setHandshakeHandler(new WebSocketUserHandshakeHandler());
     }

@@ -10,6 +10,8 @@ import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,36 +41,36 @@ public class ChatController {
      * Processar mensagem de chat
      */
     @MessageMapping("/chat.send")
-    @SendTo("/topic/public")
-    public ChatMessage sendMessage(@Valid @Payload ChatMessage chatMessage,
-                                   SimpMessageHeaderAccessor headerAccessor) {
-        try {
-            String sessionId = headerAccessor.getSessionId();
-            return chatService.processMessage(chatMessage, sessionId);
-        } catch (Exception e) {
-            logger.error("Erro ao enviar mensagem: {}", e.getMessage());
-            return ChatMessage.createErrorMessage("Erro ao enviar mensagem");
+    public void sendMessage(@Valid @Payload ChatMessage chatMessage, SimpMessageHeaderAccessor headerAccessor) {
+        String sessionId = headerAccessor.getSessionId();
+        ChatMessage result = chatService.processMessage(chatMessage, sessionId);
+        if (result.getType() == ChatMessage.MessageType.ERROR) {
+            sendErrorToSession(headerAccessor, result);
+        } else {
+            messagingTemplate.convertAndSend("/topic/public", result);
         }
     }
 
-    /**
-     * Adicionar usuário ao chat
-     */
     @MessageMapping("/chat.addUser")
-    @SendTo("/topic/public")
-    public ChatMessage addUser(@Valid @Payload ChatMessage chatMessage,
-                               SimpMessageHeaderAccessor headerAccessor) {
-        try {
-            String username = chatMessage.getSender();
-            String sessionId = headerAccessor.getSessionId();
+    public void addUser(@Valid @Payload ChatMessage chatMessage, SimpMessageHeaderAccessor headerAccessor) {
+        String username = chatMessage.getSender();
+        // Sender deve corresponder ao Principal criado na negociacao WebSocket.
+        if (headerAccessor.getUser() == null ||
+                username == null || !username.equals(headerAccessor.getUser().getName())) {
+            sendErrorToSession(headerAccessor, ChatMessage.createErrorMessage("Identidade de sessao invalida"));
+            return;
+        }
+        ChatMessage result = chatService.addUser(username, headerAccessor.getSessionId());
+        if (result.getType() == ChatMessage.MessageType.ERROR) {
+            sendErrorToSession(headerAccessor, result);
+        } else {
+            messagingTemplate.convertAndSend("/topic/public", result);
+        }
+    }
 
-            // Adicionar username na sessão
-            headerAccessor.getSessionAttributes().put("username", username);
-
-            return chatService.addUser(username, sessionId);
-        } catch (Exception e) {
-            logger.error("Erro ao adicionar usuário: {}", e.getMessage());
-            return ChatMessage.createErrorMessage("Erro ao conectar usuário");
+    private void sendErrorToSession(SimpMessageHeaderAccessor accessor, ChatMessage error) {
+        if (accessor.getUser() != null) {
+            messagingTemplate.convertAndSendToUser(accessor.getUser().getName(), "/queue/error", error);
         }
     }
 
@@ -104,30 +106,10 @@ public class ChatController {
      * Enviar mensagem privada
      */
     @MessageMapping("/chat.private")
-    public void sendPrivateMessage(@Valid @Payload ChatMessage message,
-                                   SimpMessageHeaderAccessor headerAccessor) {
-        try {
-            String sessionId = headerAccessor.getSessionId();
-            User sender = chatService.getUserBySession(sessionId);
-
-            if (sender != null && message.getRecipient() != null) {
-                ChatMessage privateMessage = chatService.sendPrivateMessage(
-                        message.getContent(),
-                        sender.getUsername(),
-                        message.getRecipient()
-                );
-
-                if (privateMessage.getType() == ChatMessage.MessageType.ERROR) {
-                    messagingTemplate.convertAndSendToUser(
-                            sender.getUsername(),
-                            "/queue/error",
-                            privateMessage
-                    );
-                }
-            }
-        } catch (Exception e) {
-            logger.error("Erro ao enviar mensagem privada: {}", e.getMessage());
-        }
+    public void sendPrivateMessage(@Payload ChatMessage message, SimpMessageHeaderAccessor headerAccessor) {
+        // V2 dev: nao existe identidade autenticada. Chat privado fica DESATIVADO.
+        // Nunca reabilitar o fluxo legado sem implementar autorizacao por sessao/Principal.
+        logger.debug("Tentativa de chat privado recusada (feature indisponivel)");
     }
 
     /**
@@ -210,59 +192,36 @@ public class ChatController {
         return chatService.getUserByUsername(username);
     }
 
-    // ===== ENDPOINTS PARA CHAT PRIVADO =====
-
-    /**
-     * Obter conversas privadas de um usuário (REST endpoint)
-     */
+    // Endpoints privados legados permanecem explicitamente inacessiveis nesta etapa.
     @GetMapping("/api/chat/private/conversations/{username}")
     @ResponseBody
     public List<PrivateConversationInfo> getUserPrivateConversations(@PathVariable String username) {
-        try {
-            return chatService.getUserPrivateConversations(username);
-        } catch (Exception e) {
-            logger.error("Erro ao obter conversas privadas para {}: {}", username, e.getMessage());
-            return new ArrayList<>();
-        }
+        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Private chat requires authentication");
     }
 
-    /**
-     * Obter histórico de conversa privada entre dois usuários (REST endpoint)
-     */
     @GetMapping("/api/chat/private/conversation/{user1}/{user2}")
     @ResponseBody
-    public List<ChatMessage> getPrivateConversationHistory(
-            @PathVariable String user1,
-            @PathVariable String user2) {
-        try {
-            return chatService.getPrivateConversationHistory(user1, user2);
-        } catch (Exception e) {
-            logger.error("Erro ao obter histórico de conversa privada: {}", e.getMessage());
-            return new ArrayList<>();
-        }
+    public List<ChatMessage> getPrivateConversationHistory(@PathVariable String user1, @PathVariable String user2) {
+        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Private chat requires authentication");
     }
 
-    /**
-     * Marcar mensagens privadas como lidas (REST endpoint)
-     */
     @PostMapping("/api/chat/private/mark-read")
     @ResponseBody
-    public Map<String, Object> markPrivateMessagesAsRead(
-            @RequestBody Map<String, String> request) {
-        try {
-            String sender = request.get("sender");
-            String recipient = request.get("recipient");
-            
-            if (sender != null && recipient != null) {
-                chatService.markPrivateMessagesAsRead(sender, recipient);
-                return Map.of("success", true, "message", "Mensagens marcadas como lidas");
-            } else {
-                return Map.of("success", false, "message", "Parâmetros inválidos");
-            }
-        } catch (Exception e) {
-            logger.error("Erro ao marcar mensagens como lidas: {}", e.getMessage());
-            return Map.of("success", false, "message", "Erro interno do servidor");
-        }
+    public Map<String, Object> markPrivateMessagesAsRead(@RequestBody Map<String, String> request) {
+        throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, "Private chat requires authentication");
+    }
+
+    @GetMapping("/api/chat/history")
+    @ResponseBody
+    public List<ChatMessage> getPublicHistory(@RequestParam(defaultValue = "50") int limit) {
+        return chatService.getRecentPublicMessages(limit);
+    }
+
+    @GetMapping("/api/chat/version")
+    @ResponseBody
+    public Map<String, Object> getVersion() {
+        return Map.of("version", "2.0.0-dev.1", "stage", "development", "publicHistory", true,
+                "privateMessaging", false);
     }
 
     /**

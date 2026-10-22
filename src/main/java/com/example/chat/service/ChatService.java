@@ -3,6 +3,7 @@ package com.example.chat.service;
 
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import com.example.chat.model.ChatMessage;
+import com.example.chat.repository.PublicMessageRepository;
 import com.example.chat.model.PrivateConversationInfo;
 import com.example.chat.model.User;
 
@@ -29,6 +31,7 @@ public class ChatService {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final PrivateChatNotificationService notificationService;
+    private final PublicMessageRepository publicMessages;
     private final Map<String, User> activeUsers = new ConcurrentHashMap<>();
     private final Map<String, String> sessionToUsername = new ConcurrentHashMap<>();
     private final List<ChatMessage> messageHistory = Collections.synchronizedList(new ArrayList<>());
@@ -40,9 +43,11 @@ public class ChatService {
     private volatile int totalMessages = 0;
     private volatile LocalDateTime chatStartTime = LocalDateTime.now();
 
-    public ChatService(SimpMessagingTemplate messagingTemplate, PrivateChatNotificationService notificationService) {
+    public ChatService(SimpMessagingTemplate messagingTemplate, PrivateChatNotificationService notificationService,
+                       PublicMessageRepository publicMessages) {
         this.messagingTemplate = messagingTemplate;
         this.notificationService = notificationService;
+        this.publicMessages = publicMessages;
         startBackgroundTasks();
     }
 
@@ -51,7 +56,9 @@ public class ChatService {
      */
     public ChatMessage addUser(String username, String sessionId) {
         try {
-            // Verificar se username já existe
+            if (username == null || !username.matches("[A-Za-z0-9_-]{1,30}")) {
+                return ChatMessage.createErrorMessage("Nome invalido. Use 1-30 caracteres: letras, numeros, _ e -");
+            }
             if (isUsernameInUse(username)) {
                 return ChatMessage.createErrorMessage("Nome de usuário já está em uso");
             }
@@ -153,27 +160,31 @@ public class ChatService {
             if (message.getContent() == null || message.getContent().trim().isEmpty()) {
                 return ChatMessage.createErrorMessage("Mensagem vazia");
             }
+            String content = message.getContent().trim();
+            if (content.length() > 1000) {
+                return ChatMessage.createErrorMessage("Mensagem excede 1000 caracteres");
+            }
 
             // Remover usuário da lista de digitando
             removeFromTyping(username);
 
             // Configurar mensagem
+            // Nunca confiar no remetente ou no tipo recebido do navegador.
             message.setSender(username);
+            message.setType(ChatMessage.MessageType.CHAT);
+            message.setContent(content);
             message.setTimestamp(LocalDateTime.now());
             message.setFormattedTime(LocalDateTime.now().format(TIME_FORMATTER));
             message.setAvatar(user.getAvatar());
             message.setColor(user.getColor());
             message.setStatus(ChatMessage.MessageStatus.SENT);
 
-            // Processar menções (@usuario)
-            processMentions(message);
-
-            // Atualizar estatísticas do usuário
+            // A gravação ocorre ANTES de atualizar contadores e publicar a mensagem.
+            publicMessages.save(message);
             user.incrementMessageCount();
             totalMessages++;
-
-            // Adicionar ao histórico
             addToHistory(message);
+            processMentions(message);
 
             logger.debug("Mensagem processada: {} -> {}", username, message.getContent());
 
@@ -413,6 +424,10 @@ public class ChatService {
         return username != null ? activeUsers.get(username) : null;
     }
 
+    public List<ChatMessage> getRecentPublicMessages(int limit) {
+        return publicMessages.recent(limit);
+    }
+
     // Métodos privados
     private boolean isUsernameInUse(String username) {
         return activeUsers.containsKey(username);
@@ -430,7 +445,7 @@ public class ChatService {
 
     private void sendMessageHistoryToUser(String username) {
         try {
-            List<ChatMessage> recentMessages = new ArrayList<>(messageHistory);
+            List<ChatMessage> recentMessages = publicMessages.recent(MAX_MESSAGE_HISTORY);
             messagingTemplate.convertAndSendToUser(username, "/queue/history", recentMessages);
         } catch (Exception e) {
             logger.error("Erro ao enviar histórico para {}: {}", username, e.getMessage());
@@ -482,6 +497,11 @@ public class ChatService {
         if (user != null) {
             user.setTyping(false);
         }
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        scheduler.shutdownNow();
     }
 
     private void startBackgroundTasks() {

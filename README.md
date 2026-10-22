@@ -1,106 +1,41 @@
-# Backend - Real Time Chat (SpringBoot)
+# Realtime Chat v2 — Backend (development)
 
-## Visão Geral
+Spring Boot + WebSocket/STOMP backend for the [Realtime Chat Angular frontend](https://github.com/pedrobicas/web-realtime-chat).
 
-Backend do sistema de chat em tempo real desenvolvido em Java com Spring Boot.
+**Version:** `2.0.0-dev.1` — development preview; not production-ready.
 
-## Tecnologias
+## Run locally
 
-- Java 17
-- Spring Boot 3.3.2
-- Spring WebSocket (STOMP)
-- Maven
+Requirements: JDK 21 and Maven. By default the service listens on `http://localhost:8081` and persists public-message history in a local H2 database file.
 
-## Estrutura do Projeto
-
-```
-src/main/java/com/example/chat/
-├── ChatApplication.java                    # Classe principal
-├── controller/                             # Controladores
-│   └── ChatController.java                 # Chat e WebSocket
-├── service/                                # Serviços
-│   ├── ChatService.java                    # Lógica do chat
-│   └── PrivateChatNotificationService.java # Notificações
-├── model/                                  # Modelos
-│   ├── ChatMessage.java                    # Mensagens
-│   ├── User.java                           # Usuários
-│   └── PrivateConversationInfo.java        # Conversas privadas
-└── config/                                 # Configurações
-    ├── WebSocketConfig.java                # WebSocket
-    ├── WebConfig.java                      # CORS
-    └── WebSocketUserHandshakeHandler.java  # Handshake
-```
-
-## Funcionalidades
-
-### Chat Público
-- WebSocket com STOMP
-- Mensagens em tempo real
-- Indicador de digitação
-- Usuários online
-- Histórico de mensagens
-
-### Chat Privado
-- Mensagens privadas
-- Conversas
-- Contadores de não lidas
-- Notificações
-
-## Executar
-
-### Pré-requisitos
-- Java 17+
-- Maven 3.6+
-
-### Comandos
-```bash
-cd java-realtime-chat
-
-# Compilar
-mvn clean compile
-
-# Executar
+```sh
 mvn spring-boot:run
 ```
 
-### Configurações
-```properties
-# application.properties
-server.port=8080
-spring.websocket.max-text-message-size=128KB
-spring.web.cors.allowed-origins=*
-```
+The frontend, running on `http://localhost:4200`, proxies `/api` and `/ws` to this service.
 
-## Endpoints
+Try `GET http://localhost:8081/api/chat/health` and `GET http://localhost:8081/api/chat/version`.
 
-### WebSocket
-- `/app/chat.send` - Enviar mensagem
-- `/app/chat.addUser` - Conectar usuário
-- `/app/chat.typing` - Indicar digitação
-- `/topic/public` - Mensagens públicas
-- `/topic/users` - Lista de usuários
+## Checks
 
-### REST
-- `GET /api/chat/users` - Usuários online
-- `GET /api/chat/stats` - Estatísticas
-
-## Testes
-
-```bash
-# Testes unitários
+```sh
 mvn test
-
-# Cobertura
-mvn jacoco:report
+mvn package
 ```
 
-## Troubleshooting
+## v2 changes
 
-### Problemas Comuns
-1. **Porta em uso**: Alterar `server.port` no `application.properties`
-2. **CORS**: Verificar `WebConfig.java`
-3. **WebSocket**: Confirmar endpoint `/ws`
+- Public-message persistence via JDBC with H2 locally or PostgreSQL in the combined Docker workspace.
+- Public message history, session-tied sender identity and validation.
+- Origin restrictions controlled by `CHAT_ALLOWED_ORIGINS`.
+- Legacy private-chat endpoints intentionally return HTTP 501 while authentication is not implemented.
 
-## Licença
+## Deployment and security
 
-Projeto sob licença MIT.
+**Do not expose this development preview publicly.** It has no real accounts or authentication, protection against spam or rate limiting. Name-only identities are not proof of identity. The development JDBC schema uses `schema.sql` rather than versioned migrations. The backend needs to run as an application process; GitHub Pages cannot run Java or a database.
+
+For a local demonstration using PostgreSQL and Nginx, download the **combined workspace ZIP** from the ChatGPT conversation. The root `compose.yaml` must be run with sibling `backend/` and `frontend/` folders.
+
+## Project state
+
+This repository retains its original history. The v2 preview should be developed on a dedicated `develop/v2` branch and validated before being merged into `main`.

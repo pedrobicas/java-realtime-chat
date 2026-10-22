@@ -27,7 +27,6 @@ buildSrc/build
 spring-test/test-output/
 
 # Maven artifacts
-pom.xml
 /target/
 
 # Eclipse artifacts, including WTP generated manifests
@@ -55,3 +54,9 @@ cached-antora-playbook.yml
 
 node_modules
 /.kotlin/
+# Desenvolvimento v2: DB local persistente
+data/
+
+realtimechat-dev*.db
+realtimechat-dev*.mv.db
+realtimechat-dev*.trace.db
