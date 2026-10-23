@@ -1,27 +1,14 @@
 # Changelog
 
-## 2.0.0-dev.1 — preview local
+## 2.0.0-dev.2 — quality / session isolation
+- Geração de `Principal` exclusivo por conexão, separado do apelido público.
+- Verificação do apelido do handshake antes de registrar a sessão.
+- Registro atômico de apelidos e roteamento individual de histórico/menções.
+- Campos das mensagens públicas passam a ser gerados pelo backend (não aceitam ID ou remetente do cliente).
+- Sessão interna não é exposta no JSON do usuário e avatars são derivados do apelido definitivo.
+- Notificação de saída publicada também quando a conexão WebSocket cai.
+- CI usa `mvn verify`; README e documentação de execução autônomos.
+- Continua **sem autenticação**; não expor na internet.
 
-### Adicionado
-- Persistência pública por JDBC, H2 e PostgreSQL
-- Leitura do histórico público por REST e STOMP
-- Script SQL de criação da tabela
-- Docker Compose, Dockerfiles e reverse proxy local
-- Identificação visual de prévia e sinalização de conexão
-- Testes do repositório de mensagens
-
-### Alterado
-- Identidade no envio de mensagens confirmada pelo backend
-- Validação de entradas e limite de tamanho
-- CORS mais restritivo, configurável por ambiente
-- Deduplicação do histórico por ID no cliente
-- Exibição segura de texto das mensagens
-
-### Temporariamente desabilitado
-- Conversas privadas e endpoints de histórico privado, pendentes de autenticação/autorização
-
-### Próximas etapas
-- Validar a execução real em Windows, browser e Docker
-- Refatorar o gerenciador de conexão STOMP e testes E2E de reconexão
-- Planejar autenticação para chat privado, sem reutilizar identidade baseada em apelido
-- Melhorar documentação, versionamento de schemas e métricas
+## 2.0.0-dev.1
+- Histórico público persistido em JDBC, controle de destinos e chat privado desabilitado.

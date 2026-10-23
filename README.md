@@ -1,41 +1,45 @@
-# Realtime Chat v2 — Backend (development)
+# Realtime Chat v2 — Spring Boot API
 
-Spring Boot + WebSocket/STOMP backend for the [Realtime Chat Angular frontend](https://github.com/pedrobicas/web-realtime-chat).
+Backend Java / Spring Boot para o [frontend Angular](https://github.com/pedrobicas/web-realtime-chat). Branch de desenvolvimento: `develop/v2`.
 
-**Version:** `2.0.0-dev.1` — development preview; not production-ready.
+**Estado:** `2.0.0-dev.2` (prévia local; não publicar diretamente na Internet). O chat público usa STOMP sobre WebSocket, persiste mensagens no banco e restabelece o histórico em novas sessões. Conversas privadas continuam desligadas até autenticação e autorização completas.
 
-## Run locally
+## Execução local
 
-Requirements: JDK 21 and Maven. By default the service listens on `http://localhost:8081` and persists public-message history in a local H2 database file.
+Requisitos: **JDK 21** e **Maven 3.9+**.
 
 ```sh
 mvn spring-boot:run
 ```
 
-The frontend, running on `http://localhost:4200`, proxies `/api` and `/ws` to this service.
+Por padrão: `http://localhost:8081`; banco H2 persistido em `./realtimechat-dev.mv.db` (arquivo ignorado pelo Git).
 
-Try `GET http://localhost:8081/api/chat/health` and `GET http://localhost:8081/api/chat/version`.
+Para executar o **sistema completo** (PostgreSQL, backend e Angular via Nginx) clone ambos os repositórios como pastas irmãs e execute `docker compose up --build` na pasta `web-realtime-chat`. Veja as instruções em [`web-realtime-chat/README.md`](https://github.com/pedrobicas/web-realtime-chat/blob/develop/v2/README.md).
 
-## Checks
+## Verificação
 
 ```sh
-mvn test
-mvn package
+mvn verify
 ```
 
-## v2 changes
+O CI executa compilação, testes e empacotamento no Java 21. Endpoints úteis:
 
-- Public-message persistence via JDBC with H2 locally or PostgreSQL in the combined Docker workspace.
-- Public message history, session-tied sender identity and validation.
-- Origin restrictions controlled by `CHAT_ALLOWED_ORIGINS`.
-- Legacy private-chat endpoints intentionally return HTTP 501 while authentication is not implemented.
+- `GET /api/chat/history?limit=50` — últimas mensagens públicas;
+- `GET /api/chat/version` — versão e recursos;
+- `GET /api/chat/users` — usuários online.
+- `GET /api/chat/health` — sinal básico de vida (não verifica a saúde do banco).
 
-## Deployment and security
+## Arquitetura / segurança
 
-**Do not expose this development preview publicly.** It has no real accounts or authentication, protection against spam or rate limiting. Name-only identities are not proof of identity. The development JDBC schema uses `schema.sql` rather than versioned migrations. The backend needs to run as an application process; GitHub Pages cannot run Java or a database.
+- **Mensagens públicas**: o backend cria IDs, timestamps, remetente e metadados; não confia nesses campos fornecidos pelo navegador.
+- **Identidade temporária**: cada sessão WebSocket tem um `Principal` de roteamento único, distinto do apelido público. O apelido continua **sem autenticação**.
+- **Persistência**: JDBC + H2 para desenvolvimento; PostgreSQL configurável com `DB_URL`, `DB_USER`, `DB_PASSWORD`, `DB_DRIVER`.
+- **CORS e origem do WebSocket**: `CHAT_ALLOWED_ORIGINS` deve conter apenas origens de confiança.
+- **Acesso de escrita ao broker**: clientes só podem enviar mensagens aos destinos `/app` autorizados.
+- **Limites**: sem autenticação, rate limiting nem sistema antifraude; a sala é apenas para desenvolvimento local.
 
-For a local demonstration using PostgreSQL and Nginx, download the **combined workspace ZIP** from the ChatGPT conversation. The root `compose.yaml` must be run with sibling `backend/` and `frontend/` folders.
+Não armazene informações privadas no chat público. Os endpoints REST legados de conversas privadas retornam HTTP 501.
 
-## Project state
+A configuração atual utiliza `schema.sql` apenas para desenvolvimento. Versionamento por Flyway e migração de Spring Boot são próximas etapas, **ainda não implementadas**.
 
-This repository retains its original history. The v2 preview should be developed on a dedicated `develop/v2` branch and validated before being merged into `main`.
+Veja [CHANGELOG](CHANGELOG.md), [decisões](docs/DECISIONS.md) e [plano](docs/DEVELOPMENT_PLAN.md).

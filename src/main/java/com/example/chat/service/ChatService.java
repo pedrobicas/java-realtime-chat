@@ -34,6 +34,7 @@ public class ChatService {
     private final PublicMessageRepository publicMessages;
     private final Map<String, User> activeUsers = new ConcurrentHashMap<>();
     private final Map<String, String> sessionToUsername = new ConcurrentHashMap<>();
+    private final Map<String, String> sessionToPrincipal = new ConcurrentHashMap<>();
     private final List<ChatMessage> messageHistory = Collections.synchronizedList(new ArrayList<>());
     private final Map<String, Set<String>> typingUsers = new ConcurrentHashMap<>();
     private final Map<String, LocalDateTime> lastTypingTime = new ConcurrentHashMap<>();
@@ -54,19 +55,21 @@ public class ChatService {
     /**
      * Adicionar usuário ao chat
      */
-    public ChatMessage addUser(String username, String sessionId) {
+    public ChatMessage addUser(String username, String sessionId, String routingPrincipal) {
         try {
             if (username == null || !username.matches("[A-Za-z0-9_-]{1,30}")) {
                 return ChatMessage.createErrorMessage("Nome invalido. Use 1-30 caracteres: letras, numeros, _ e -");
             }
-            if (isUsernameInUse(username)) {
+            if (sessionId == null || routingPrincipal == null || routingPrincipal.isBlank()) {
+                return ChatMessage.createErrorMessage("Sessão inválida");
+            }
+            // Atomic registration: concurrent sessions cannot claim the same nickname.
+            User user = new User(username, sessionId);
+            if (activeUsers.putIfAbsent(username, user) != null) {
                 return ChatMessage.createErrorMessage("Nome de usuário já está em uso");
             }
-
-            // Criar novo usuário
-            User user = new User(username, sessionId);
-            activeUsers.put(username, user);
             sessionToUsername.put(sessionId, username);
+            sessionToPrincipal.put(sessionId, routingPrincipal);
 
             logger.info("Usuário {} conectado (sessão: {})", username, sessionId);
 
@@ -82,7 +85,7 @@ public class ChatService {
             broadcastUserListUpdate();
 
             // Enviar histórico de mensagens para o novo usuário
-            sendMessageHistoryToUser(username);
+            sendMessageHistoryToUser(routingPrincipal);
 
             // Notificar mudança de status
             notificationService.notifyUserStatusChange(username, "ONLINE");
@@ -101,12 +104,14 @@ public class ChatService {
     public ChatMessage removeUser(String sessionId) {
         try {
             String username = sessionToUsername.remove(sessionId);
+            sessionToPrincipal.remove(sessionId);
             if (username == null) {
                 return null;
             }
 
-            User user = activeUsers.remove(username);
-            if (user == null) {
+            User user = activeUsers.get(username);
+            if (user == null || !sessionId.equals(user.getSessionId())
+                    || !activeUsers.remove(username, user)) {
                 return null;
             }
 
@@ -168,27 +173,20 @@ public class ChatService {
             // Remover usuário da lista de digitando
             removeFromTyping(username);
 
-            // Configurar mensagem
-            // Nunca confiar no remetente ou no tipo recebido do navegador.
-            message.setSender(username);
-            message.setType(ChatMessage.MessageType.CHAT);
-            message.setContent(content);
-            message.setTimestamp(LocalDateTime.now());
-            message.setFormattedTime(LocalDateTime.now().format(TIME_FORMATTER));
-            message.setAvatar(user.getAvatar());
-            message.setColor(user.getColor());
-            message.setStatus(ChatMessage.MessageStatus.SENT);
+            // Create a fresh server-owned message, discarding all client metadata.
+            ChatMessage accepted = new ChatMessage(ChatMessage.MessageType.CHAT, content, username);
+            accepted.setAvatar(user.getAvatar());
+            accepted.setColor(user.getColor());
+            accepted.setFormattedTime(accepted.getTimestamp().format(TIME_FORMATTER));
 
-            // A gravação ocorre ANTES de atualizar contadores e publicar a mensagem.
-            publicMessages.save(message);
+            // Persist BEFORE exposing the message to other clients.
+            publicMessages.save(accepted);
             user.incrementMessageCount();
             totalMessages++;
-            addToHistory(message);
-            processMentions(message);
-
-            logger.debug("Mensagem processada: {} -> {}", username, message.getContent());
-
-            return message;
+            addToHistory(accepted);
+            processMentions(accepted);
+            logger.debug("Mensagem publica aceita de {}", username);
+            return accepted;
 
         } catch (Exception e) {
             logger.error("Erro ao processar mensagem: {}", e.getMessage());
@@ -443,12 +441,12 @@ public class ChatService {
         }
     }
 
-    private void sendMessageHistoryToUser(String username) {
+    private void sendMessageHistoryToUser(String routingPrincipal) {
         try {
             List<ChatMessage> recentMessages = publicMessages.recent(MAX_MESSAGE_HISTORY);
-            messagingTemplate.convertAndSendToUser(username, "/queue/history", recentMessages);
+            messagingTemplate.convertAndSendToUser(routingPrincipal, "/queue/history", recentMessages);
         } catch (Exception e) {
-            logger.error("Erro ao enviar histórico para {}: {}", username, e.getMessage());
+            logger.error("Erro ao enviar histórico: {}", e.getMessage());
         }
     }
 
@@ -484,7 +482,11 @@ public class ChatService {
             message.setMentions(mentions);
             // Enviar notificação para usuários mencionados
             for (String username : mentions) {
-                messagingTemplate.convertAndSendToUser(username, "/queue/mention", message);
+                User mentioned = activeUsers.get(username);
+                String principal = mentioned == null ? null : sessionToPrincipal.get(mentioned.getSessionId());
+                if (principal != null) {
+                    messagingTemplate.convertAndSendToUser(principal, "/queue/mention", message);
+                }
             }
         }
     }

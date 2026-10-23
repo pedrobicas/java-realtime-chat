@@ -1,22 +1,8 @@
-# Decisões de arquitetura (versão de desenvolvimento)
+# Decisões da v2 (desenvolvimento)
 
-**ADR-001 — Evolução incremental, sem refazer a interface**
-- As telas Angular e o protocolo STOMP atuais foram preservados.
-- A v2 começa corrigindo persistência e segurança, não por um redesign genérico.
-
-**ADR-002 — Persistência só da sala pública neste marco**
-- `PublicMessageRepository` possui operação `save` e consulta `recent`.
-- A ordem é definida por sequência no banco; o histórico retorna um lote de até 100 mensagens.
-- H2 em arquivo permite desenvolvimento sem infraestrutura; PostgreSQL em Compose permite integração mais próxima da produção.
-- Escrita antes da publicação: se falhar a gravação, a mensagem não é anunciada como recebida na sala.
-
-**ADR-003 — Não tentar dar segurança de conta a apelidos temporários**
-- Principal no handshake está associado ao apelido; o backend impede que o corpo de uma mensagem pública o substitua.
-- Isso NÃO constitui autenticação confiável.
-- Conversas privadas e históricos privados ficam fora de serviço até existir identidade e autorização reais.
-
-**ADR-004 — O cliente renderiza mensagens como texto**
-- Evita interpretar HTML fornecido por outros usuários e reduz risco de conteúdo indesejado no DOM.
-
-**ADR-005 — Escopo da prévia e validação**
-- Nenhuma promessa de readiness de produção nem de testes compilados: verificar em máquina com dependências e corrigir antes do próximo milestone.
+1. **Evolução incremental:** preservar a interface e o modelo de mensagens do chat original.
+2. **Armazenamento público:** JDBC salva mensagens públicas antes do broadcast; banco H2 local e PostgreSQL no Compose.
+3. **Identidade de sessão:** o nickname é uma escolha temporária do visitante, nunca uma credencial. Cada WebSocket possui um `Principal` de roteamento aleatório e único. O JOIN valida o nickname obtido do handshake. Mensagens privadas permanecem desligadas.
+4. **Protocolo:** `/app/chat.send` aceita somente conteúdo de uma mensagem pública; o servidor cria metadados. Clientes não podem publicar diretamente em `/topic` ou `/queue`.
+5. **Qualidade:** CI deve rodar testes; relatórios locais e migrações futuras são registrados sem declarar produção pronta antes de validação.
+6. **Roadmap:** considerar Flyway, clientes STOMP via npm, migração gradual de frameworks, testes de integração com clientes reais, autenticação e rate limiting antes de publicação.

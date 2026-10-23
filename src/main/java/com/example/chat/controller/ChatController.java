@@ -41,9 +41,12 @@ public class ChatController {
      * Processar mensagem de chat
      */
     @MessageMapping("/chat.send")
-    public void sendMessage(@Valid @Payload ChatMessage chatMessage, SimpMessageHeaderAccessor headerAccessor) {
+    public void sendMessage(@Payload PublicMessageRequest request, SimpMessageHeaderAccessor headerAccessor) {
         String sessionId = headerAccessor.getSessionId();
-        ChatMessage result = chatService.processMessage(chatMessage, sessionId);
+        // Ignore any spoofed sender, type, id, color, avatar or timestamp from the browser.
+        ChatMessage result = chatService.processMessage(
+                new ChatMessage(ChatMessage.MessageType.CHAT,
+                        request == null ? null : request.content(), null), sessionId);
         if (result.getType() == ChatMessage.MessageType.ERROR) {
             sendErrorToSession(headerAccessor, result);
         } else {
@@ -54,19 +57,24 @@ public class ChatController {
     @MessageMapping("/chat.addUser")
     public void addUser(@Valid @Payload ChatMessage chatMessage, SimpMessageHeaderAccessor headerAccessor) {
         String username = chatMessage.getSender();
-        // Sender deve corresponder ao Principal criado na negociacao WebSocket.
+        // The requested nickname must match the handshake; it is NOT the STOMP Principal.
+        Object requestedName = headerAccessor.getSessionAttributes() == null ? null
+                : headerAccessor.getSessionAttributes().get("username");
         if (headerAccessor.getUser() == null ||
-                username == null || !username.equals(headerAccessor.getUser().getName())) {
+                username == null || !username.equals(requestedName)) {
             sendErrorToSession(headerAccessor, ChatMessage.createErrorMessage("Identidade de sessao invalida"));
             return;
         }
-        ChatMessage result = chatService.addUser(username, headerAccessor.getSessionId());
+        ChatMessage result = chatService.addUser(username, headerAccessor.getSessionId(),
+                headerAccessor.getUser().getName());
         if (result.getType() == ChatMessage.MessageType.ERROR) {
             sendErrorToSession(headerAccessor, result);
         } else {
             messagingTemplate.convertAndSend("/topic/public", result);
         }
     }
+
+    public record PublicMessageRequest(String content) {}
 
     private void sendErrorToSession(SimpMessageHeaderAccessor accessor, ChatMessage error) {
         if (accessor.getUser() != null) {
@@ -217,10 +225,16 @@ public class ChatController {
         return chatService.getRecentPublicMessages(limit);
     }
 
+    @GetMapping("/api/chat/health")
+    @ResponseBody
+    public Map<String, String> getHealth() {
+        return Map.of("status", "UP");
+    }
+
     @GetMapping("/api/chat/version")
     @ResponseBody
     public Map<String, Object> getVersion() {
-        return Map.of("version", "2.0.0-dev.1", "stage", "development", "publicHistory", true,
+        return Map.of("version", "2.0.0-dev.2", "stage", "development", "publicHistory", true,
                 "privateMessaging", false);
     }
 

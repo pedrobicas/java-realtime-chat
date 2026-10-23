@@ -62,6 +62,8 @@ public class User {
         this();
         this.username = username;
         this.sessionId = sessionId;
+        // Recompute after the nickname is assigned (the no-arg constructor uses a placeholder).
+        this.avatar = generateAvatarUrl();
     }
 
     // Gerar cor aleatória
@@ -155,6 +157,7 @@ public class User {
         this.avatar = generateAvatarUrl(); // Regenerar avatar com novo nome
     }
 
+    @com.fasterxml.jackson.annotation.JsonIgnore
     public String getSessionId() { return sessionId; }
     public void setSessionId(String sessionId) { this.sessionId = sessionId; }
 

@@ -42,6 +42,10 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Autowired
     private ChatService chatService;
 
+    @Lazy
+    @Autowired
+    private org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
+
     @Bean
     public TaskScheduler taskScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
@@ -162,8 +166,8 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
             // Broadcast leave message if user was found
             if (leaveMessage != null) {
-                // Note: Cannot use messaging template here as the session is already closed
-                // The chatService will handle broadcasting through other means
+                // Publish to remaining clients (the disconnected session will not receive it).
+                messagingTemplate.convertAndSend("/topic/public", leaveMessage);
                 logger.info("Usuário desconectado: {}", leaveMessage.getSender());
             }
 

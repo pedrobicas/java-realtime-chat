@@ -60,3 +60,10 @@ data/
 realtimechat-dev*.db
 realtimechat-dev*.mv.db
 realtimechat-dev*.trace.db
+
+# Development data / IDE
+.idea/
+*.mv.db
+*.trace.db
+realtimechat-dev*
+.env

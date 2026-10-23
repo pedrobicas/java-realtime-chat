@@ -7,6 +7,6 @@ RUN mvn -B -q package
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
-COPY --from=build /app/target/java-realtime-chat-2.0.0-dev.1.jar app.jar
+COPY --from=build /app/target/java-realtime-chat-2.0.0-dev.2.jar app.jar
 EXPOSE 8081
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
