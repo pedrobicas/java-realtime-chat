@@ -42,9 +42,22 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Autowired
     private ChatService chatService;
 
+<<<<<<< Updated upstream
     @Lazy
     @Autowired
     private org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
+=======
+    @Autowired
+    private com.example.chat.security.GuestSessionService guestSessionService;
+
+    @org.springframework.beans.factory.annotation.Value("${chat.allowed-origins:http://localhost:4200}")
+    private String[] allowedOrigins;
+
+    @Override
+    public void configureClientInboundChannel(org.springframework.messaging.simp.config.ChannelRegistration registration) {
+        registration.interceptors(new com.example.chat.security.GuestStompAuthInterceptor(guestSessionService));
+    }
+>>>>>>> Stashed changes
 
     @Bean
     public TaskScheduler taskScheduler() {
@@ -78,9 +91,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         // Register WebSocket endpoint
         registry.addEndpoint("/ws")
+<<<<<<< Updated upstream
                 .setAllowedOriginPatterns(allowedOrigins.split(","))
                 .addInterceptors(userHandshakeInterceptor())
                 .setHandshakeHandler(new WebSocketUserHandshakeHandler())
+=======
+                .setAllowedOriginPatterns(allowedOrigins)
+>>>>>>> Stashed changes
                 .withSockJS()
                 .setHeartbeatTime(25000)  // 25 seconds
                 .setDisconnectDelay(30000) // 30 seconds
@@ -90,48 +107,13 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
         // Register endpoint without SockJS for modern browsers
         registry.addEndpoint("/ws-native")
+<<<<<<< Updated upstream
                 .setAllowedOriginPatterns(allowedOrigins.split(","))
                 .addInterceptors(userHandshakeInterceptor())
+=======
+                .setAllowedOriginPatterns(allowedOrigins)
+>>>>>>> Stashed changes
                 .setHandshakeHandler(new WebSocketUserHandshakeHandler());
-    }
-
-    @Bean
-    public HandshakeInterceptor userHandshakeInterceptor() {
-        return new HandshakeInterceptor() {
-            @Override
-            public boolean beforeHandshake(ServerHttpRequest request,
-                                           ServerHttpResponse response,
-                                           WebSocketHandler wsHandler,
-                                           Map<String, Object> attributes) throws Exception {
-                String username = null;
-                try {
-                    String query = request.getURI() != null ? request.getURI().getQuery() : null;
-                    if (query != null) {
-                        for (String pair : query.split("&")) {
-                            int idx = pair.indexOf('=');
-                            if (idx > 0) {
-                                String key = pair.substring(0, idx);
-                                String val = pair.substring(idx + 1);
-                                if ("username".equals(key)) {
-                                    username = java.net.URLDecoder.decode(val, java.nio.charset.StandardCharsets.UTF_8);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                } catch (Exception ignored) {}
-
-                if (username != null && !username.isBlank()) {
-                    attributes.put("username", username);
-                }
-                return true;
-            }
-
-            @Override
-            public void afterHandshake(ServerHttpRequest request,
-                                       ServerHttpResponse response,
-                                       WebSocketHandler wsHandler, Exception exception) {}
-        };
     }
 
     /**
@@ -166,8 +148,14 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
             // Broadcast leave message if user was found
             if (leaveMessage != null) {
+<<<<<<< Updated upstream
                 // Publish to remaining clients (the disconnected session will not receive it).
                 messagingTemplate.convertAndSend("/topic/public", leaveMessage);
+=======
+                // Note: Cannot use messaging template here as the session is already closed
+                // The chatService will handle broadcasting through other means
+                guestSessionService.suspend(leaveMessage.getSender());
+>>>>>>> Stashed changes
                 logger.info("Usuário desconectado: {}", leaveMessage.getSender());
             }
 
