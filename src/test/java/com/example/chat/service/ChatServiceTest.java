@@ -69,6 +69,26 @@ class ChatServiceTest {
     }
 
     @Test
+    void authenticatedReconnectReplacesOnlyItsOwnTransportSession() {
+        service.addUser("Ana", "old-session", "guest-one");
+        assertThat(service.addUser("Ana", "new-session", "guest-one").getType())
+                .isEqualTo(ChatMessage.MessageType.JOIN);
+        assertThat(service.removeUser("old-session")).isNull();
+        assertThat(service.getUserBySession("old-session")).isNull();
+        assertThat(service.getUserBySession("new-session").getUsername()).isEqualTo("Ana");
+        assertThat(service.getOnlineUsers()).hasSize(1);
+        assertThat(service.processMessage(new ChatMessage(ChatMessage.MessageType.CHAT, "hello", "Fake"),
+                "new-session").getSender()).isEqualTo("Ana");
+    }
+
+    @Test
+    void repeatedJoinOnTheSameSessionDoesNotBroadcastAnotherJoin() {
+        service.addUser("Ana", "s1", "guest-one");
+        assertThat(service.addUser("Ana", "s1", "guest-one")).isNull();
+        assertThat(service.getOnlineUsers()).hasSize(1);
+    }
+
+    @Test
     void bindsAuthorToSessionAndPersistsBeforePublishing() {
         service.addUser("Tester", "s1", "guest-s1");
         ChatMessage message = new ChatMessage(ChatMessage.MessageType.CHAT, "  ola  ", "FakeUser");

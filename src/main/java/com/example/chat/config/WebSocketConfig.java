@@ -12,22 +12,18 @@ import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
-import org.springframework.web.socket.WebSocketHandler;
-import org.springframework.http.server.ServerHttpRequest;
-import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
-import org.springframework.web.socket.server.HandshakeInterceptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Map;
-
 import com.example.chat.service.ChatService;
 import com.example.chat.model.ChatMessage;
+import com.example.chat.security.GuestSessionService;
+import com.example.chat.security.GuestStompAuthInterceptor;
 
 @Configuration
 @EnableWebSocketMessageBroker
@@ -42,22 +38,12 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Autowired
     private ChatService chatService;
 
-<<<<<<< Updated upstream
     @Lazy
     @Autowired
     private org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
-=======
+
     @Autowired
-    private com.example.chat.security.GuestSessionService guestSessionService;
-
-    @org.springframework.beans.factory.annotation.Value("${chat.allowed-origins:http://localhost:4200}")
-    private String[] allowedOrigins;
-
-    @Override
-    public void configureClientInboundChannel(org.springframework.messaging.simp.config.ChannelRegistration registration) {
-        registration.interceptors(new com.example.chat.security.GuestStompAuthInterceptor(guestSessionService));
-    }
->>>>>>> Stashed changes
+    private GuestSessionService guestSessionService;
 
     @Bean
     public TaskScheduler taskScheduler() {
@@ -70,7 +56,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        registration.interceptors(new ClientDestinationGuard());
+        registration.interceptors(new GuestStompAuthInterceptor(guestSessionService), new ClientDestinationGuard());
     }
 
     @Override
@@ -89,15 +75,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        // SUBSCRIBE, JOIN and subsequent SEND frames depend on this order per connection.
+        registry.setPreserveReceiveOrder(true);
         // Register WebSocket endpoint
         registry.addEndpoint("/ws")
-<<<<<<< Updated upstream
                 .setAllowedOriginPatterns(allowedOrigins.split(","))
-                .addInterceptors(userHandshakeInterceptor())
-                .setHandshakeHandler(new WebSocketUserHandshakeHandler())
-=======
-                .setAllowedOriginPatterns(allowedOrigins)
->>>>>>> Stashed changes
                 .withSockJS()
                 .setHeartbeatTime(25000)  // 25 seconds
                 .setDisconnectDelay(30000) // 30 seconds
@@ -107,13 +89,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
         // Register endpoint without SockJS for modern browsers
         registry.addEndpoint("/ws-native")
-<<<<<<< Updated upstream
-                .setAllowedOriginPatterns(allowedOrigins.split(","))
-                .addInterceptors(userHandshakeInterceptor())
-=======
-                .setAllowedOriginPatterns(allowedOrigins)
->>>>>>> Stashed changes
-                .setHandshakeHandler(new WebSocketUserHandshakeHandler());
+                .setAllowedOriginPatterns(allowedOrigins.split(","));
     }
 
     /**
@@ -148,14 +124,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
             // Broadcast leave message if user was found
             if (leaveMessage != null) {
-<<<<<<< Updated upstream
+                guestSessionService.suspend(leaveMessage.getSender());
                 // Publish to remaining clients (the disconnected session will not receive it).
                 messagingTemplate.convertAndSend("/topic/public", leaveMessage);
-=======
-                // Note: Cannot use messaging template here as the session is already closed
-                // The chatService will handle broadcasting through other means
-                guestSessionService.suspend(leaveMessage.getSender());
->>>>>>> Stashed changes
                 logger.info("Usuário desconectado: {}", leaveMessage.getSender());
             }
 

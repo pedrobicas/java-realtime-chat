@@ -10,22 +10,13 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  */
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
-<<<<<<< Updated upstream
     @Value("${chat.allowed-origins}")
     private String allowedOrigins;
-=======
-    @org.springframework.beans.factory.annotation.Value("${chat.allowed-origins:http://localhost:4200}")
-    private String[] allowedOrigins;
->>>>>>> Stashed changes
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
-<<<<<<< Updated upstream
                 .allowedOriginPatterns(allowedOrigins.split(","))
-=======
-                .allowedOriginPatterns(allowedOrigins)
->>>>>>> Stashed changes
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(false)

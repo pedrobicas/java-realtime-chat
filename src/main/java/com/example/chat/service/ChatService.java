@@ -52,37 +52,29 @@ public class ChatService {
         startBackgroundTasks();
     }
 
-    @jakarta.annotation.PreDestroy
-    public void shutdown() {
-        scheduler.shutdownNow();
-    }
-
     /**
      * Adicionar usuário ao chat
      */
-    public ChatMessage addUser(String username, String sessionId, String routingPrincipal) {
+    public synchronized ChatMessage addUser(String username, String sessionId, String routingPrincipal) {
         try {
-<<<<<<< Updated upstream
             if (username == null || !username.matches("[A-Za-z0-9_-]{1,30}")) {
                 return ChatMessage.createErrorMessage("Nome invalido. Use 1-30 caracteres: letras, numeros, _ e -");
             }
             if (sessionId == null || routingPrincipal == null || routingPrincipal.isBlank()) {
                 return ChatMessage.createErrorMessage("Sessão inválida");
             }
-            // Atomic registration: concurrent sessions cannot claim the same nickname.
-            User user = new User(username, sessionId);
-            if (activeUsers.putIfAbsent(username, user) != null) {
-                return ChatMessage.createErrorMessage("Nome de usuário já está em uso");
-=======
-            // The STOMP principal is authenticated against the server-issued guest token.
-            // A reconnect with that identity replaces the obsolete transport session.
-            User user = new User(username, sessionId);
-            User previous = activeUsers.put(username, user);
+            User previous = activeUsers.get(username);
             if (previous != null) {
+                // Only the same server-authenticated guest identity may replace its transport.
+                if (!routingPrincipal.equals(sessionToPrincipal.get(previous.getSessionId()))) {
+                    return ChatMessage.createErrorMessage("Nome de usuário já está em uso");
+                }
                 if (sessionId.equals(previous.getSessionId())) return null;
-                sessionToUsername.remove(previous.getSessionId(), username);
->>>>>>> Stashed changes
+                sessionToUsername.remove(previous.getSessionId());
+                sessionToPrincipal.remove(previous.getSessionId());
             }
+            User user = new User(username, sessionId);
+            activeUsers.put(username, user);
             sessionToUsername.put(sessionId, username);
             sessionToPrincipal.put(sessionId, routingPrincipal);
 
@@ -116,7 +108,7 @@ public class ChatService {
     /**
      * Remover usuário do chat
      */
-    public ChatMessage removeUser(String sessionId) {
+    public synchronized ChatMessage removeUser(String sessionId) {
         try {
             String username = sessionToUsername.remove(sessionId);
             sessionToPrincipal.remove(sessionId);
@@ -124,25 +116,11 @@ public class ChatService {
                 return null;
             }
 
-<<<<<<< Updated upstream
             User user = activeUsers.get(username);
             if (user == null || !sessionId.equals(user.getSessionId())
                     || !activeUsers.remove(username, user)) {
                 return null;
             }
-=======
-            // Ignore delayed disconnects from an older session after reconnect.
-            java.util.concurrent.atomic.AtomicReference<User> removed = new java.util.concurrent.atomic.AtomicReference<>();
-            activeUsers.computeIfPresent(username, (key, current) -> {
-                if (sessionId.equals(current.getSessionId())) {
-                    removed.set(current);
-                    return null;
-                }
-                return current;
-            });
-            User user = removed.get();
-            if (user == null) return null;
->>>>>>> Stashed changes
 
             logger.info("Usuário {} desconectado (sessão: {})", username, sessionId);
 
@@ -177,12 +155,12 @@ public class ChatService {
      */
     public ChatMessage processMessage(ChatMessage message, String sessionId) {
         try {
-            String username = sessionToUsername.get(sessionId);
-            User user = activeUsers.get(username);
+            User user = getUserBySession(sessionId);
 
             if (user == null || !sessionId.equals(user.getSessionId())) {
                 return ChatMessage.createErrorMessage("Usuário não encontrado na sessão");
             }
+            String username = user.getUsername();
 
             // Verificar se usuário pode enviar mensagens
             if (!user.canSendMessage()) {
@@ -202,23 +180,11 @@ public class ChatService {
             // Remover usuário da lista de digitando
             removeFromTyping(username);
 
-<<<<<<< Updated upstream
             // Create a fresh server-owned message, discarding all client metadata.
             ChatMessage accepted = new ChatMessage(ChatMessage.MessageType.CHAT, content, username);
             accepted.setAvatar(user.getAvatar());
             accepted.setColor(user.getColor());
             accepted.setFormattedTime(accepted.getTimestamp().format(TIME_FORMATTER));
-=======
-            // The server, not the client, controls message identity and type.
-            message.setId(UUID.randomUUID().toString());
-            message.setType(ChatMessage.MessageType.CHAT);
-            message.setSender(username);
-            message.setTimestamp(LocalDateTime.now());
-            message.setFormattedTime(LocalDateTime.now().format(TIME_FORMATTER));
-            message.setAvatar(user.getAvatar());
-            message.setColor(user.getColor());
-            message.setStatus(ChatMessage.MessageStatus.SENT);
->>>>>>> Stashed changes
 
             // Persist BEFORE exposing the message to other clients.
             publicMessages.save(accepted);
@@ -479,27 +445,16 @@ public class ChatService {
         }
     }
 
-<<<<<<< Updated upstream
-    private void sendMessageHistoryToUser(String routingPrincipal) {
-        try {
-            List<ChatMessage> recentMessages = publicMessages.recent(MAX_MESSAGE_HISTORY);
-            messagingTemplate.convertAndSendToUser(routingPrincipal, "/queue/history", recentMessages);
-=======
     private List<ChatMessage> snapshotHistory() {
         synchronized (messageHistory) {
             return new ArrayList<>(messageHistory);
         }
     }
 
-    private void sendMessageHistoryToUser(String username) {
+    private void sendMessageHistoryToUser(String routingPrincipal) {
         try {
-            // Never deliver private conversation content through public chat history.
-            List<ChatMessage> recentMessages = snapshotHistory().stream()
-                    .filter(message -> message.getType() != ChatMessage.MessageType.PRIVATE_MESSAGE)
-                    .filter(message -> !message.isPrivate())
-                    .collect(Collectors.toList());
-            messagingTemplate.convertAndSendToUser(username, "/queue/history", recentMessages);
->>>>>>> Stashed changes
+            List<ChatMessage> recentMessages = publicMessages.recent(MAX_MESSAGE_HISTORY);
+            messagingTemplate.convertAndSendToUser(routingPrincipal, "/queue/history", recentMessages);
         } catch (Exception e) {
             logger.error("Erro ao enviar histórico: {}", e.getMessage());
         }

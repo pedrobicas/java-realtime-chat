@@ -8,7 +8,6 @@ import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
 
-import java.security.Principal;
 import java.util.Set;
 
 /** Authenticates STOMP CONNECT before allowing subscriptions or application sends. */
@@ -29,8 +28,7 @@ public class GuestStompAuthInterceptor implements ChannelInterceptor {
 
         StompCommand command = accessor.getCommand();
         if (command == StompCommand.CONNECT) {
-            String username = sessions.requireUsername(accessor.getFirstNativeHeader("Authorization"));
-            accessor.setUser((Principal) () -> username);
+            accessor.setUser(sessions.requirePrincipal(accessor.getFirstNativeHeader("Authorization")));
             return message;
         }
 

@@ -5,11 +5,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.security.SecureRandom;
+import java.security.Principal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Short-lived guest identities for this single-node demonstration.
@@ -26,14 +28,23 @@ public class GuestSessionService {
 
     public record Credentials(String username, String token) {}
 
+    public record GuestPrincipal(String username, String routingId) implements Principal {
+        @Override
+        public String getName() {
+            return routingId;
+        }
+    }
+
     private static final class GuestSession {
         final String username;
         final String token;
+        final GuestPrincipal principal;
         Instant expiresAt;
 
         GuestSession(String username, String token, Instant expiresAt) {
             this.username = username;
             this.token = token;
+            this.principal = new GuestPrincipal(username, "guest-" + UUID.randomUUID());
             this.expiresAt = expiresAt;
         }
     }
@@ -74,6 +85,11 @@ public class GuestSessionService {
         }
         session.expiresAt = Instant.now().plus(ACTIVE_LIFETIME);
         return session.username;
+    }
+
+    public synchronized GuestPrincipal requirePrincipal(String authorization) {
+        String username = requireUsername(authorization);
+        return byUsername.get(username).principal;
     }
 
     public synchronized void suspend(String username) {
